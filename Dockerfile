@@ -7,15 +7,9 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 
-COPY go.mod ./
-RUN go mod download || true
-
-COPY . .
-RUN go mod tidy
-
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN go mod download; go mod tidy; CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w" \
     -o /app/email-service .
 
