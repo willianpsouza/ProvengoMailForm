@@ -61,6 +61,9 @@ type EmailRequest struct {
 	Name     string `json:"name"`
 	Assunto  string `json:"assunto"`
 	Corpo    string `json:"corpo"`
+	// To overrides the default DEST_EMAIL recipient when set (e.g. per-hostgroup
+	// maintainer for FastNetMon alerts).
+	To string `json:"to,omitempty"`
 }
 
 type EmailResponse struct {
@@ -77,6 +80,8 @@ var campanhasValidas = map[string]bool{
 	"vendas":  true,
 	"duvidas": true,
 	"contato": true,
+	"alertas": true, // alertas operacionais (ex: FastNetMon)
+	"ataque":  true,
 }
 
 func (r *EmailRequest) Validate() error {
@@ -90,8 +95,9 @@ func (r *EmailRequest) Validate() error {
 	}
 	r.Campanha = strings.ToLower(strings.TrimSpace(r.Campanha))
 	if !campanhasValidas[r.Campanha] {
-		return fmt.Errorf("campanha inválida: use vendas, duvidas ou contato")
+		return fmt.Errorf("campanha inválida: use vendas, duvidas, contato, alertas ou ataque")
 	}
+	r.To = strings.TrimSpace(r.To)
 
 	if r.EmailSrc == "" {
 		return fmt.Errorf("campo 'email_src' é obrigatório")
@@ -188,10 +194,16 @@ func (s *EmailService) SendEmail(req *EmailRequest) error {
 		time.Now().Format("02/01/2006 15:04:05"),
 	)
 
+	// Recipient: per-request override, else the configured default.
+	dest := s.config.DestEmail
+	if req.To != "" {
+		dest = req.To
+	}
+
 	// Monta headers MIME
 	var msg strings.Builder
 	msg.WriteString(fmt.Sprintf("From: Provengo Alerts <%s>\r\n", s.config.SMTPUser))
-	msg.WriteString(fmt.Sprintf("To: %s\r\n", s.config.DestEmail))
+	msg.WriteString(fmt.Sprintf("To: %s\r\n", dest))
 	msg.WriteString(fmt.Sprintf("Reply-To: %s <%s>\r\n", req.Name, req.EmailSrc))
 	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
 	msg.WriteString("MIME-Version: 1.0\r\n")
@@ -225,7 +237,7 @@ func (s *EmailService) SendEmail(req *EmailRequest) error {
 	if err := conn.Mail(s.config.SMTPUser); err != nil {
 		return fmt.Errorf("mail from: %w", err)
 	}
-	if err := conn.Rcpt(s.config.DestEmail); err != nil {
+	if err := conn.Rcpt(dest); err != nil {
 		return fmt.Errorf("rcpt to: %w", err)
 	}
 
